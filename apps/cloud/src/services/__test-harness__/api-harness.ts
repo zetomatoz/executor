@@ -43,10 +43,9 @@ export const TEST_BASE_URL = "http://test.local";
 export const TEST_ORG_HEADER = "x-test-org-id";
 export const TEST_USER_HEADER = "x-test-user-id";
 
-// Mirrors apps/cloud/src/services/executor.ts#createScopedExecutor — the
-// per-user scope id bakes in the org so the same user id in a different
-// org gets a distinct scope row.
+// Mirrors apps/cloud/src/services/executor.ts#createScopedExecutor.
 const userOrgScopeId = (userId: string, orgId: string) => `user-org:${userId}:${orgId}`;
+const globalWorkspaceScopeId = (orgId: string) => `workspace:global:${orgId}`;
 
 // `asOrg(orgId, …)` callers don't care which specific user they are, only
 // that the executor has a valid user-org scope. We give each org a stable
@@ -86,8 +85,13 @@ const createTestScopedExecutor = (userId: string, orgId: string, orgName: string
       name: `Personal · ${orgName}`,
       createdAt: new Date(),
     });
+    const globalWorkspaceScope = Scope.make({
+      id: ScopeId.make(globalWorkspaceScopeId(orgId)),
+      name: `Global · ${orgName}`,
+      createdAt: new Date(),
+    });
     return yield* createExecutor({
-      scopes: [userOrgScope, orgScope],
+      scopes: [userOrgScope, globalWorkspaceScope, orgScope],
       db: fuma.db,
       plugins,
       httpClientLayer: testHttpClientLayer,

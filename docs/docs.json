@@ -83,6 +83,7 @@
               "cloud/workspaces",
               "cloud/sources",
               "cloud/api-keys",
+              "cloud/self-hosted-proxy",
               "cloud/hosting-model"
             ]
           }

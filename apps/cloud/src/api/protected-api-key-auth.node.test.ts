@@ -1,10 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import { env } from "cloudflare:workers";
 
 import { ApiKeyService } from "../auth/api-keys";
 import { UserStoreService } from "../auth/context";
 import { WorkOSAuth, type WorkOSAuthService } from "../auth/workos";
-import { resolveProtectedIdentity } from "./protected";
+import { resolveProtectedIdentity, resolveProxyIdentity } from "./protected";
 
 const createdAt = new Date("2026-01-01T00:00:00.000Z");
 
@@ -62,6 +63,22 @@ const run = (request: Request) =>
     Effect.provide(Layer.mergeAll(stubApiKeys, stubWorkOS, stubUsers)),
   );
 
+const withEnv = <A, E, R>(patch: Partial<typeof env>, effect: Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = Object.fromEntries(
+        (Object.keys(patch) as Array<keyof typeof env>).map((key) => [key, env[key]]),
+      );
+      Object.assign(env, patch);
+      return previous;
+    }),
+    () => effect,
+    (previous) =>
+      Effect.sync(() => {
+        Object.assign(env, previous);
+      }),
+  );
+
 describe("protected API key auth", () => {
   it.effect("resolves a valid bearer API key into protected identity", () =>
     Effect.gen(function* () {
@@ -97,5 +114,36 @@ describe("protected API key auth", () => {
         code: "invalid_api_key",
       });
     }),
+  );
+
+  it.effect("resolves trusted proxy identity headers without WorkOS", () =>
+    withEnv(
+      {
+        EXECUTOR_PROXY_TOKEN: "proxy-secret",
+      },
+      Effect.gen(function* () {
+        const identity = yield* resolveProxyIdentity(
+          new Request("https://executor.test/api/tools", {
+            headers: {
+              authorization: "Bearer proxy-secret",
+              "x-executor-user-id": "entra-user-123",
+              "x-executor-org-id": "entra-org-456",
+              "x-executor-org-name": "Internal Platform",
+              "x-executor-user-email": "thomas@example.com",
+              "x-executor-user-name": "Thomas",
+            },
+          }),
+        );
+
+        expect(identity).toEqual({
+          accountId: "entra-user-123",
+          organizationId: "entra-org-456",
+          organizationName: "Internal Platform",
+          email: "thomas@example.com",
+          name: "Thomas",
+          avatarUrl: null,
+        });
+      }),
+    ),
   );
 });

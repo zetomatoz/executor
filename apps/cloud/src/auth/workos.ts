@@ -115,9 +115,13 @@ class WorkOSAuthConfigurationError extends Data.TaggedError("WorkOSAuthConfigura
 // ---------------------------------------------------------------------------
 
 const make = Effect.gen(function* () {
-  const apiKey = env.WORKOS_API_KEY;
-  const clientId = env.WORKOS_CLIENT_ID;
-  const cookiePassword = env.WORKOS_COOKIE_PASSWORD;
+  const proxyMode = env.EXECUTOR_AUTH_MODE === "proxy";
+  const apiKey = env.WORKOS_API_KEY ?? (proxyMode ? "sk_proxy_mode_unused" : "");
+  const clientId = env.WORKOS_CLIENT_ID ?? "";
+  const cookiePassword =
+    proxyMode && !env.WORKOS_COOKIE_PASSWORD
+      ? "proxy-mode-unused-cookie-password!"
+      : env.WORKOS_COOKIE_PASSWORD;
 
   if (!cookiePassword || cookiePassword.length < 32) {
     return yield* new WorkOSAuthConfigurationError({

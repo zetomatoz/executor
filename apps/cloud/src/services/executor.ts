@@ -34,20 +34,29 @@ export type CloudPlugins = ReturnType<typeof executorConfig.plugins>;
 
 const orgPlugins = (): CloudPlugins =>
   executorConfig.plugins({
-    workosCredentials: {
-      apiKey: env.WORKOS_API_KEY,
-      clientId: env.WORKOS_CLIENT_ID,
-    },
+    secretProvider:
+      env.EXECUTOR_SECRET_PROVIDER === "azure-key-vault" ? "azure-key-vault" : "workos-vault",
+    azureKeyVaultUrl: env.AZURE_KEY_VAULT_URL,
+    azureKeyVaultNamePrefix: env.AZURE_KEY_VAULT_NAME_PREFIX,
+    ...(env.EXECUTOR_SECRET_PROVIDER === "azure-key-vault"
+      ? {}
+      : {
+          workosCredentials: {
+            apiKey: env.WORKOS_API_KEY,
+            clientId: env.WORKOS_CLIENT_ID,
+          },
+        }),
   });
 
 // ---------------------------------------------------------------------------
 // Create a fresh executor for a (user, org) pair (stateless, per-request).
 //
-// Scope stack is `[userOrgScope, orgScope]` — innermost first. The
+// Scope stack is `[userOrgScope, globalWorkspaceScope, orgScope]` — innermost first. The
 // user-within-org scope id (`user-org:${userId}:${orgId}`) intentionally
 // includes the org id so the same WorkOS user in a different org gets a
-// distinct scope row; future workspace scopes can slot in between without
-// conflicting with a hypothetical global user scope.
+// distinct scope row. The global workspace scope is the shared day-one
+// configuration layer for org-wide sources and policies; future workspace
+// scopes can replace or sit alongside it without changing executor internals.
 //
 // OAuth token writes require an explicit `tokenScope`. User sign-in UI passes
 // the user-org scope so a member's access/refresh tokens cannot leak to other
@@ -84,13 +93,18 @@ export const createScopedExecutor = (
       name: `Personal · ${organizationName}`,
       createdAt: new Date(),
     });
+    const globalWorkspaceScope = Scope.make({
+      id: ScopeId.make(`workspace:global:${organizationId}`),
+      name: `Global · ${organizationName}`,
+      createdAt: new Date(),
+    });
 
     // The executor surface returns raw `StorageFailure`; translation to
     // the opaque `InternalError({ traceId })` happens at the HTTP edge
     // via `withCapture` (see `api/protected-layers.ts`). That's
     // where `ErrorCaptureLive` (Sentry) gets wired in.
     return yield* createExecutor({
-      scopes: [userOrgScope, orgScope],
+      scopes: [userOrgScope, globalWorkspaceScope, orgScope],
       db: fuma.db,
       plugins,
       httpClientLayer,

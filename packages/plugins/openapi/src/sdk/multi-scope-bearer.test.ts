@@ -81,6 +81,134 @@ const ProjectsGroupLive = HttpApiBuilder.group(VercelApi, "projects", (handlers)
 // ---------------------------------------------------------------------------
 
 describe("OpenAPI multi-scope bearer (Vercel-style)", () => {
+  it.effect("global workspace source uses per-user credentials in a three-layer stack", () =>
+    Effect.gen(function* () {
+      const secretStore = new Map<string, string>();
+      const key = (scope: string, id: string) => `${scope}\u0000${id}`;
+      const memoryProvider: SecretProvider = {
+        key: "memory",
+        writable: true,
+        get: (id, scope) => Effect.sync(() => secretStore.get(key(scope, id)) ?? null),
+        set: (id, value, scope) =>
+          Effect.sync(() => {
+            secretStore.set(key(scope, id), value);
+          }),
+        delete: (id, scope) => Effect.sync(() => secretStore.delete(key(scope, id))),
+      };
+      const memorySecretsPlugin = definePlugin(() => ({
+        id: "memory-secrets" as const,
+        storage: () => ({}),
+        secretProviders: [memoryProvider],
+      }));
+
+      const openApiServer = yield* serveOpenApiHttpApiTestServer({
+        api: VercelApi,
+        handlersLayer: ProjectsGroupLive,
+      });
+      const clientLayer = FetchHttpClient.layer;
+      const plugins = [
+        openApiPlugin({ httpClientLayer: clientLayer }),
+        memorySecretsPlugin(),
+      ] as const;
+      const config = makeTestConfig({ plugins });
+
+      const now = new Date();
+      const orgScope = Scope.make({ id: ScopeId.make("org"), name: "org", createdAt: now });
+      const globalWorkspaceScope = Scope.make({
+        id: ScopeId.make("workspace:global:org"),
+        name: "global workspace",
+        createdAt: now,
+      });
+      const aliceScope = Scope.make({
+        id: ScopeId.make("user-org:alice:org"),
+        name: "alice",
+        createdAt: now,
+      });
+      const bobScope = Scope.make({
+        id: ScopeId.make("user-org:bob:org"),
+        name: "bob",
+        createdAt: now,
+      });
+
+      const adminExec = yield* createExecutor({
+        ...config,
+        scopes: [globalWorkspaceScope, orgScope],
+        plugins,
+        onElicitation: "accept-all",
+      });
+      const aliceExec = yield* createExecutor({
+        ...config,
+        scopes: [aliceScope, globalWorkspaceScope, orgScope],
+        plugins,
+        onElicitation: "accept-all",
+      });
+      const bobExec = yield* createExecutor({
+        ...config,
+        scopes: [bobScope, globalWorkspaceScope, orgScope],
+        plugins,
+        onElicitation: "accept-all",
+      });
+
+      yield* addOpenApiTestSource(adminExec, openApiServer, {
+        scope: String(globalWorkspaceScope.id),
+        namespace: "devops",
+        headers: {
+          Authorization: ConfiguredHeaderBinding.make({
+            kind: "binding",
+            slot: "auth:azure_devops_pat",
+            prefix: "Bearer ",
+          }),
+        },
+      });
+
+      yield* aliceExec.secrets.set(
+        SetSecretInput.make({
+          id: SecretId.make("azure_devops_pat"),
+          scope: aliceScope.id,
+          name: "Azure DevOps PAT",
+          value: "alice-pat",
+        }),
+      );
+      yield* bobExec.secrets.set(
+        SetSecretInput.make({
+          id: SecretId.make("azure_devops_pat"),
+          scope: bobScope.id,
+          name: "Azure DevOps PAT",
+          value: "bob-pat",
+        }),
+      );
+
+      yield* aliceExec.openapi.setSourceBinding(
+        OpenApiSourceBindingInput.make({
+          sourceId: "devops",
+          sourceScope: globalWorkspaceScope.id,
+          scope: aliceScope.id,
+          slot: "auth:azure_devops_pat",
+          value: { kind: "secret", secretId: SecretId.make("azure_devops_pat") },
+        }),
+      );
+      yield* bobExec.openapi.setSourceBinding(
+        OpenApiSourceBindingInput.make({
+          sourceId: "devops",
+          sourceScope: globalWorkspaceScope.id,
+          scope: bobScope.id,
+          slot: "auth:azure_devops_pat",
+          value: { kind: "secret", secretId: SecretId.make("azure_devops_pat") },
+        }),
+      );
+
+      const aliceResult = unwrapInvocation(
+        yield* aliceExec.tools.invoke("devops.projects.list", {}, autoApprove),
+      );
+      const bobResult = unwrapInvocation(
+        yield* bobExec.tools.invoke("devops.projects.list", {}, autoApprove),
+      );
+
+      expect((aliceResult.data as EchoHeaders | null)?.authorization).toBe("Bearer alice-pat");
+      expect((bobResult.data as EchoHeaders | null)?.authorization).toBe("Bearer bob-pat");
+    }),
+  );
+
   it.effect("admin-added source; each user's per-scope token wins on invocation", () =>
     Effect.gen(function* () {
       // Scope-partitioning in-memory provider. The composite key is

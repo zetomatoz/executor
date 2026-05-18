@@ -29,6 +29,13 @@ declare global {
       MCP_RESOURCE_ORIGIN?: string;
       NODE_ENV?: string;
 
+      // Self-hosted Azure mode
+      EXECUTOR_AUTH_MODE?: "workos" | "proxy";
+      EXECUTOR_PROXY_TOKEN?: string;
+      EXECUTOR_SECRET_PROVIDER?: "workos-vault" | "azure-key-vault";
+      AZURE_KEY_VAULT_URL?: string;
+      AZURE_KEY_VAULT_NAME_PREFIX?: string;
+
       // Shared with frontend
       VITE_PUBLIC_SITE_URL?: string;
     }

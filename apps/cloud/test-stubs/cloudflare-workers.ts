@@ -12,6 +12,11 @@ export const env: Record<string, unknown> = {
   WORKOS_API_KEY: process.env.WORKOS_API_KEY,
   WORKOS_CLIENT_ID: process.env.WORKOS_CLIENT_ID,
   WORKOS_COOKIE_PASSWORD: process.env.WORKOS_COOKIE_PASSWORD,
+  EXECUTOR_AUTH_MODE: process.env.EXECUTOR_AUTH_MODE,
+  EXECUTOR_PROXY_TOKEN: process.env.EXECUTOR_PROXY_TOKEN,
+  EXECUTOR_SECRET_PROVIDER: process.env.EXECUTOR_SECRET_PROVIDER,
+  AZURE_KEY_VAULT_URL: process.env.AZURE_KEY_VAULT_URL,
+  AZURE_KEY_VAULT_NAME_PREFIX: process.env.AZURE_KEY_VAULT_NAME_PREFIX,
 };
 export class WorkerEntrypoint {}
 export class DurableObject {}

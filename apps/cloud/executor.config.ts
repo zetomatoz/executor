@@ -2,6 +2,7 @@ import { defineExecutorConfig } from "@executor-js/sdk";
 import { openApiHttpPlugin } from "@executor-js/plugin-openapi/api";
 import { mcpHttpPlugin } from "@executor-js/plugin-mcp/api";
 import { graphqlHttpPlugin } from "@executor-js/plugin-graphql/api";
+import { azureKeyVaultPlugin, type AzureKeyVaultClient } from "@executor-js/plugin-azure-key-vault";
 import { workosVaultPlugin, type WorkOSVaultClient } from "@executor-js/plugin-workos-vault";
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,7 @@ import { workosVaultPlugin, type WorkOSVaultClient } from "@executor-js/plugin-w
 // ---------------------------------------------------------------------------
 
 interface CloudPluginDeps {
+  readonly secretProvider?: "workos-vault" | "azure-key-vault";
   /** WorkOS vault credentials. Provided per-request from `env.WORKOS_*`
    *  in production; the test harness leaves this undefined and uses
    *  `workosVaultClient` to inject an in-memory fake instead. */
@@ -33,19 +35,39 @@ interface CloudPluginDeps {
    *  bypass the real WorkOS API. Production leaves this undefined and
    *  falls back to the credential-driven default. */
   readonly workosVaultClient?: WorkOSVaultClient;
+  readonly azureKeyVaultUrl?: string;
+  readonly azureKeyVaultNamePrefix?: string;
+  readonly azureKeyVaultClient?: AzureKeyVaultClient;
 }
 
 export default defineExecutorConfig({
-  plugins: ({ workosCredentials, workosVaultClient }: CloudPluginDeps = {}) =>
-    [
+  plugins: ({
+    secretProvider = "workos-vault",
+    workosCredentials,
+    workosVaultClient,
+    azureKeyVaultUrl,
+    azureKeyVaultNamePrefix,
+    azureKeyVaultClient,
+  }: CloudPluginDeps = {}) => {
+    const secretPlugin =
+      secretProvider === "azure-key-vault"
+        ? azureKeyVaultPlugin({
+            vaultUrl: azureKeyVaultUrl,
+            namePrefix: azureKeyVaultNamePrefix,
+            ...(azureKeyVaultClient ? { client: azureKeyVaultClient } : {}),
+          })
+        : workosVaultPlugin({
+            credentials: workosCredentials ?? { apiKey: "", clientId: "" },
+            ...(workosVaultClient ? { client: workosVaultClient } : {}),
+          });
+
+    return [
       openApiHttpPlugin(),
       mcpHttpPlugin({
         dangerouslyAllowStdioMCP: false,
       }),
       graphqlHttpPlugin(),
-      workosVaultPlugin({
-        credentials: workosCredentials ?? { apiKey: "", clientId: "" },
-        ...(workosVaultClient ? { client: workosVaultClient } : {}),
-      }),
-    ] as const,
+      secretPlugin,
+    ] as const;
+  },
 });

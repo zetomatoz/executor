@@ -1,0 +1,67 @@
+---
+title: Self-Hosted Proxy Mode
+description: Run Executor Cloud privately behind a trusted enterprise proxy.
+---
+
+In proxy mode, Executor does not authenticate the human user directly.
+
+Your proxy authenticates the user first, for example with Microsoft Entra ID.
+Executor then authenticates only the proxy-to-Executor request and uses trusted
+headers from the proxy to build the per-request scope stack.
+
+## Request Flow
+
+1. A user signs in to the proxy.
+2. The proxy validates the user and organization in the enterprise identity system.
+3. The proxy calls the private Executor API with a service token.
+4. Executor validates the service token.
+5. Executor reads the trusted user and organization headers.
+6. Executor creates the layered scope stack for that request.
+
+## Example Proxy Request
+
+```http
+POST /api/tools/invoke
+Authorization: Bearer super-secret-proxy-to-executor-token
+x-executor-user-id: entra-user-8f1a
+x-executor-org-id: contoso
+x-executor-org-name: Contoso
+x-executor-user-email: alice@contoso.com
+x-executor-user-name: Alice Martin
+Content-Type: application/json
+```
+
+Executor compares the bearer token to `EXECUTOR_PROXY_TOKEN`. If it matches,
+Executor treats the identity headers as trusted proxy-provided claims.
+
+For the request above, Executor builds this scope stack:
+
+```ts
+["user-org:entra-user-8f1a:contoso", "workspace:global:contoso", "contoso"];
+```
+
+The first scope stores Alice's credentials. The global workspace scope stores
+shared organization-wide sources and policies. The final scope is the
+organization boundary.
+
+If Bob calls the same shared tool through the same proxy, the shared workspace
+scope stays the same but the user credential scope changes:
+
+```ts
+["user-org:entra-user-bob:contoso", "workspace:global:contoso", "contoso"];
+```
+
+This lets one shared source configuration serve multiple users while each tool
+invocation resolves credentials from the correct user's scope.
+
+## Required Environment
+
+```bash
+EXECUTOR_AUTH_MODE=proxy
+EXECUTOR_PROXY_TOKEN=super-secret-proxy-to-executor-token
+EXECUTOR_SECRET_PROVIDER=azure-key-vault
+AZURE_KEY_VAULT_URL=https://example.vault.azure.net
+```
+
+The proxy must keep Executor private and must not forward user-controlled
+identity headers without validating and replacing them.

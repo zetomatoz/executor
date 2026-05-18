@@ -12,6 +12,12 @@
 // cloudPlugins>` — from this one tuple, so adding/removing a plugin is
 // still a single `executor.config.ts` edit.
 import executorConfig from "../../executor.config";
+import { env } from "cloudflare:workers";
 
-export const cloudPlugins = executorConfig.plugins();
+export const cloudPlugins = executorConfig.plugins({
+  secretProvider:
+    env.EXECUTOR_SECRET_PROVIDER === "azure-key-vault" ? "azure-key-vault" : "workos-vault",
+  azureKeyVaultUrl: env.AZURE_KEY_VAULT_URL,
+  azureKeyVaultNamePrefix: env.AZURE_KEY_VAULT_NAME_PREFIX,
+});
 export type CloudPlugins = typeof cloudPlugins;

@@ -5,6 +5,7 @@
 import { HttpApiSwagger } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { Effect, Layer } from "effect";
+import { env } from "cloudflare:workers";
 
 import {
   ExecutionEngineService,
@@ -32,6 +33,54 @@ import { requestScopedMiddleware } from "./request-scoped";
 // this file doesn't import each plugin's `*/api` directly.
 const provideExecutorExtensions = providePluginExtensions(cloudPlugins);
 const BEARER_PREFIX = "Bearer ";
+
+const headerValue = (request: Request, name: string): string | null => {
+  const value = request.headers.get(name);
+  return value && value.trim().length > 0 ? value.trim() : null;
+};
+
+export const resolveProxyIdentity = (request: Request) =>
+  Effect.gen(function* () {
+    const expected = env.EXECUTOR_PROXY_TOKEN;
+    if (!expected) {
+      return yield* new HttpResponseError({
+        status: 503,
+        code: "proxy_auth_not_configured",
+        message: "Proxy authentication is not configured",
+      });
+    }
+
+    const authHeader = request.headers.get("authorization");
+    const token = authHeader?.startsWith(BEARER_PREFIX)
+      ? authHeader.slice(BEARER_PREFIX.length).trim()
+      : "";
+    if (token !== expected) {
+      return yield* new HttpResponseError({
+        status: 401,
+        code: "invalid_proxy_token",
+        message: "Invalid proxy token",
+      });
+    }
+
+    const accountId = headerValue(request, "x-executor-user-id");
+    const organizationId = headerValue(request, "x-executor-org-id");
+    if (!accountId || !organizationId) {
+      return yield* new HttpResponseError({
+        status: 400,
+        code: "missing_proxy_identity",
+        message: "Proxy requests must include x-executor-user-id and x-executor-org-id",
+      });
+    }
+
+    return {
+      accountId,
+      organizationId,
+      organizationName: headerValue(request, "x-executor-org-name") ?? organizationId,
+      email: headerValue(request, "x-executor-user-email") ?? "",
+      name: headerValue(request, "x-executor-user-name"),
+      avatarUrl: null,
+    };
+  });
 
 export const resolveApiKeyIdentity = (request: Request) =>
   Effect.gen(function* () {
@@ -126,6 +175,9 @@ export const resolveSessionIdentity = (request: Request) =>
 
 export const resolveProtectedIdentity = (request: Request) =>
   Effect.gen(function* () {
+    if (env.EXECUTOR_AUTH_MODE === "proxy") {
+      return yield* resolveProxyIdentity(request);
+    }
     const apiKeyIdentity = yield* resolveApiKeyIdentity(request);
     if (apiKeyIdentity) return apiKeyIdentity;
     return yield* resolveSessionIdentity(request);
