@@ -81,6 +81,7 @@ executor.jsonc
 .warden-runs/
 
 # Agent local notes
+CONTEXT.md
 MISTAKES.md
 DESIRES.md
 LEARNINGS.md
