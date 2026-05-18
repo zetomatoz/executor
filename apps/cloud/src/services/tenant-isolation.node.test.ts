@@ -20,15 +20,10 @@ const TenantIsolationApi = HttpApi.make("tenantIsolationTest")
   .annotateMerge(OpenApi.annotations({ title: "Tenant Test API", version: "1.0.0" }));
 
 const makeTenantOpenApiSourcePayload = (
-  targetScope: ScopeId,
   namespace: string,
-  options: Omit<
-    Parameters<typeof makeOpenApiHttpApiTestAddSpecPayload>[1],
-    "targetScope" | "namespace"
-  > = {},
+  options: Omit<Parameters<typeof makeOpenApiHttpApiTestAddSpecPayload>[1], "namespace"> = {},
 ) =>
   makeOpenApiHttpApiTestAddSpecPayload(TenantIsolationApi, {
-    targetScope,
     namespace,
     ...options,
   });
@@ -116,7 +111,7 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgA, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
-          payload: makeTenantOpenApiSourcePayload(ScopeId.make(orgA), namespaceA),
+          payload: makeTenantOpenApiSourcePayload(namespaceA),
         }),
       );
 
@@ -136,7 +131,7 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgA, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
-          payload: makeTenantOpenApiSourcePayload(ScopeId.make(orgA), namespaceA),
+          payload: makeTenantOpenApiSourcePayload(namespaceA),
         }),
       );
 
@@ -159,7 +154,7 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgA, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
-          payload: makeTenantOpenApiSourcePayload(ScopeId.make(orgA), namespaceA),
+          payload: makeTenantOpenApiSourcePayload(namespaceA),
         }),
       );
 
@@ -259,11 +254,10 @@ describe("tenant isolation (HTTP)", () => {
           yield* client.openapi.addSpec({
             params: { scopeId: ScopeId.make(orgA) },
             payload: {
-              ...makeTenantOpenApiSourcePayload(ScopeId.make(orgA), namespaceA),
+              ...makeTenantOpenApiSourcePayload(namespaceA),
               headers: {
                 Authorization: {
-                  kind: "binding",
-                  slot: "auth:token",
+                  kind: "secret",
                   prefix: "Bearer ",
                 },
               },
@@ -275,7 +269,7 @@ describe("tenant isolation (HTTP)", () => {
               sourceId: namespaceA,
               sourceScope: ScopeId.make(orgA),
               scope: ScopeId.make(orgA),
-              slot: "auth:token",
+              slot: "header:authorization",
               value: { kind: "secret", secretId: secretIdA },
             },
           });
@@ -303,16 +297,7 @@ describe("tenant isolation (HTTP)", () => {
         Effect.gen(function* () {
           yield* client.openapi.addSpec({
             params: { scopeId: ScopeId.make(orgA) },
-            payload: {
-              ...makeTenantOpenApiSourcePayload(ScopeId.make(orgA), namespaceA),
-              headers: {
-                Authorization: {
-                  kind: "binding",
-                  slot: "auth:conn",
-                  prefix: "Bearer ",
-                },
-              },
-            },
+            payload: makeTenantOpenApiSourcePayload(namespaceA),
           });
           yield* client.openapi.setSourceBinding({
             params: { scopeId: ScopeId.make(orgA) },
@@ -346,7 +331,7 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgA, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgA) },
-          payload: makeTenantOpenApiSourcePayload(ScopeId.make(orgA), namespace, {
+          payload: makeTenantOpenApiSourcePayload(namespace, {
             name: "Org A API",
             baseUrl: "https://org-a.example.com",
           }),
@@ -355,7 +340,7 @@ describe("tenant isolation (HTTP)", () => {
       yield* asOrg(orgB, (client) =>
         client.openapi.addSpec({
           params: { scopeId: ScopeId.make(orgB) },
-          payload: makeTenantOpenApiSourcePayload(ScopeId.make(orgB), namespace, {
+          payload: makeTenantOpenApiSourcePayload(namespace, {
             name: "Org B API",
             baseUrl: "https://org-b.example.com",
           }),
